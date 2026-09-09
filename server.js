@@ -317,5 +317,5 @@ io.on('connection',socket=>{
 });
 
 app.use(express.static(path.join(__dirname,'public'),{extensions:['html']}));
-app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+app.get('/{*splat}',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 server.listen(PORT,()=>console.log(`SaleSpot running at ${APP_URL}`));
