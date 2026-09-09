@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaleSpot — Buy. Sell. Bid. Discover.</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+</head>
+<body>
+<header class="mobilebar"><button id="mobileHome" class="brand">📍 <b>Sale<span>Spot</span></b></button><button id="mobileMenu">☰</button></header>
+<main id="app">
+  <section id="homeView" class="home-wrap" aria-label="SaleSpot homepage">
+    <div class="stage">
+      <img src="/home.jpg" alt="SaleSpot homepage with auctions, marketplace, yard sales, estate sales, and nearby map">
+      <button class="hot" style="left:30.5%;top:1.1%;width:4.9%;height:2.1%" data-action="home" aria-label="Home"></button>
+      <button class="hot" style="left:35.0%;top:1.1%;width:6.3%;height:2.1%" data-view="auction" aria-label="Auctions"></button>
+      <button class="hot" style="left:40.7%;top:1.1%;width:9.1%;height:2.1%" data-view="marketplace" aria-label="Marketplace"></button>
+      <button class="hot" style="left:49.1%;top:1.1%;width:7.5%;height:2.1%" data-view="yard_sale" aria-label="Yard Sales"></button>
+      <button class="hot" style="left:56.0%;top:1.1%;width:8.2%;height:2.1%" data-view="estate_sale" aria-label="Estate Sales"></button>
+      <button class="hot" style="left:63.0%;top:1.1%;width:4.2%;height:2.1%" data-action="map" aria-label="Map"></button>
+      <button class="hot" style="left:66.6%;top:1.1%;width:5.0%;height:2.1%" data-action="sell" aria-label="Sell"></button>
+      <button class="hot" style="left:83.4%;top:.7%;width:5.9%;height:2.7%" data-action="login" aria-label="Log in"></button>
+      <button class="hot" style="left:89.3%;top:.7%;width:7.3%;height:2.7%" data-action="signup" aria-label="Sign up"></button>
+      <button class="hot" style="left:5.4%;top:15.1%;width:61.5%;height:3.2%" data-action="search" aria-label="Search"></button>
+      <button class="hot" style="left:5.3%;top:18.5%;width:15.2%;height:3.1%" data-action="map" aria-label="Explore nearby"></button>
+      <button class="hot" style="left:20.9%;top:18.5%;width:16.0%;height:3.1%" data-view="auction" aria-label="Browse auctions"></button>
+      <button class="hot" style="left:37.0%;top:18.5%;width:14.6%;height:3.1%" data-action="sell" aria-label="Post a sale"></button>
+      <button class="hot" style="left:2.0%;top:22.5%;width:10.7%;height:6.2%" data-cat="Vehicles" aria-label="Vehicles"></button>
+      <button class="hot" style="left:12.7%;top:22.5%;width:10.7%;height:6.2%" data-cat="Horses & Livestock" aria-label="Horses and livestock"></button>
+      <button class="hot" style="left:23.4%;top:22.5%;width:10.6%;height:6.2%" data-cat="Equipment" aria-label="Equipment"></button>
+      <button class="hot" style="left:34.0%;top:22.5%;width:10.3%;height:6.2%" data-cat="Home & Garden" aria-label="Home and garden"></button>
+      <button class="hot" style="left:44.3%;top:22.5%;width:10.0%;height:6.2%" data-cat="Collectibles" aria-label="Collectibles"></button>
+      <button class="hot" style="left:54.3%;top:22.5%;width:10.2%;height:6.2%" data-cat="Boats & RVs" aria-label="Boats and RVs"></button>
+      <button class="hot" style="left:64.5%;top:22.5%;width:9.8%;height:6.2%" data-cat="Electronics" aria-label="Electronics"></button>
+      <button class="hot" style="left:74.3%;top:22.5%;width:9.0%;height:6.2%" data-cat="Fashion" aria-label="Fashion"></button>
+      <button class="hot" style="left:83.3%;top:22.5%;width:7.9%;height:6.2%" data-cat="Tools" aria-label="Tools"></button>
+      <button class="hot" style="left:91.2%;top:22.5%;width:7.8%;height:6.2%" data-cat="" aria-label="All categories"></button>
+      <button class="hot" style="left:4.1%;top:29.0%;width:22.3%;height:13.3%" data-view="auction" aria-label="Bid and Win"></button>
+      <button class="hot" style="left:27.4%;top:29.0%;width:22.3%;height:13.3%" data-view="yard_sale" aria-label="Yard Sales Near You"></button>
+      <button class="hot" style="left:50.5%;top:29.0%;width:22.4%;height:13.3%" data-view="estate_sale" aria-label="Unique Treasures"></button>
+      <button class="hot" style="left:73.7%;top:29.0%;width:22.5%;height:13.3%" data-view="marketplace" aria-label="Buy it Now"></button>
+      <button class="hot" style="left:4.0%;top:46.1%;width:18.1%;height:12.1%" data-listing="1" aria-label="1967 Chevrolet Camaro auction"></button>
+      <button class="hot" style="left:23.5%;top:46.1%;width:18.2%;height:12.1%" data-listing="2" aria-label="Diamond ring auction"></button>
+      <button class="hot" style="left:42.8%;top:46.1%;width:18.2%;height:12.1%" data-listing="3" aria-label="John Deere tractor auction"></button>
+      <button class="hot" style="left:62.2%;top:46.1%;width:18.1%;height:12.1%" data-listing="4" aria-label="Morgan silver dollar auction"></button>
+      <button class="hot" style="left:4.3%;top:68.0%;width:40%;height:5.5%" data-listing="7" aria-label="Smith family yard sale"></button>
+      <button class="hot" style="left:4.3%;top:73.8%;width:40%;height:5.5%" data-listing="8" aria-label="Historic Home Estate Sale"></button>
+      <button class="hot" style="left:4.3%;top:79.7%;width:40%;height:5.5%" data-listing="3" aria-label="Farm equipment auction"></button>
+      <button class="hot" style="left:45.2%;top:60.0%;width:50.6%;height:24.8%" data-action="map" aria-label="Interactive map"></button>
+    </div>
+  </section>
+
+  <section id="appView" class="app-view hidden">
+    <nav class="topnav">
+      <button class="brand" data-action="home">📍 <b>Sale<span>Spot</span></b></button>
+      <div class="navlinks"><button data-action="home">Home</button><button data-view="auction">Auctions</button><button data-view="marketplace">Marketplace</button><button data-view="yard_sale">Yard Sales</button><button data-view="estate_sale">Estate Sales</button><button data-action="map">Map</button></div>
+      <div class="navright"><button id="msgBtn" class="ghost">Messages</button><button id="accountBtn" class="ghost">Log In</button><button class="gold" data-action="sell">Sell</button></div>
+    </nav>
+    <div class="page">
+      <div id="pageHead" class="page-head"></div>
+      <div id="pageBody"></div>
+    </div>
+  </section>
+</main>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true"><div class="modal-card"><div class="modal-head"><h2 id="modalTitle">SaleSpot</h2><button id="modalClose" aria-label="Close">✕</button></div><div id="modalBody" class="modal-body"></div></div></div>
+<div id="toast" class="toast" aria-live="polite"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="/app.js"></script>
+</body></html>
