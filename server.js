@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS listings (
   start_bid_cents INTEGER,
   current_bid_cents INTEGER,
   reserve_cents INTEGER,
-  bid_increment_cents INTEGER NOT NULL DEFAULT 100,
+  bid_increment_cents INTEGER  DEFAULT 100,
   starts_at TEXT,
   ends_at TEXT,
   event_date TEXT,
