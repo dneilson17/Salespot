@@ -28,7 +28,7 @@ This project converts the SaleSpot click-through into a functioning full-stack m
 
 Demo account: `sarah@example.com` / `Demo123!`
 
-Default development admin: `admin@salespot.local` / `ChangeMe123!` (change this before deployment).
+Admin access is created only when `ADMIN_EMAIL` and a strong `ADMIN_PASSWORD` are supplied through environment variables. Never commit production credentials to the repository.
 
 ## Stripe
 
