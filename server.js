@@ -12,13 +12,17 @@ import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { Server as SocketIOServer } from 'socket.io';
 import Stripe from 'stripe';
+import {
+  createAuthLimiter,
+  disableKnownDemoPasswords,
+  loadSecurityConfig,
+} from './security.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
-const IS_PROD = process.env.NODE_ENV === 'production';
-const JWT_SECRET = process.env.JWT_SECRET || (IS_PROD ? crypto.randomBytes(48).toString('hex') : 'development-only-change-me');
-if (IS_PROD && !process.env.JWT_SECRET) console.warn('WARNING: JWT_SECRET is not set; sessions will reset whenever the server restarts.');
+const security = loadSecurityConfig(process.env);
+const JWT_SECRET = security.jwtSecret;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -130,10 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(sender_id,receiver_id,
 
 const count = db.prepare('SELECT COUNT(*) c FROM users').get().c;
 if (count === 0) seed();
+if (security.isProduction) disableKnownDemoPasswords(db);
 ensureAdmin();
-
-function cleanText(value, max=200){ return String(value ?? '').trim().slice(0,max); }
-function validEmail(value){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||'')); }
 
 function seed(){
   const pass = bcrypt.hashSync('Demo123!', 12);
@@ -161,13 +163,16 @@ function seed(){
 }
 
 function ensureAdmin(){
-  const email = process.env.ADMIN_EMAIL;
-  const pw = process.env.ADMIN_PASSWORD;
-  if (!email || !pw) return;
-  if (pw.length < 12) throw new Error('ADMIN_PASSWORD must be at least 12 characters');
-  if (!db.prepare('SELECT id FROM users WHERE email=?').get(email)) {
+  const email = security.adminEmail;
+  if (!email) return;
+  const existing = db.prepare('SELECT id FROM users WHERE email=?').get(email);
+  const hash = bcrypt.hashSync(security.adminPassword,12);
+  if (existing) {
+    db.prepare("UPDATE users SET password_hash=?,role='admin',verified=1 WHERE id=?")
+      .run(hash, existing.id);
+  } else {
     db.prepare("INSERT INTO users(name,email,password_hash,role,verified) VALUES(?,?,?,?,1)")
-      .run('SaleSpot Admin', email, bcrypt.hashSync(pw,12), 'admin');
+      .run('SaleSpot Admin', email, hash, 'admin');
   }
 }
 
@@ -202,6 +207,7 @@ const io = new SocketIOServer(server,{cors:{origin:false}});
 app.set('trust proxy',1);
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],imgSrc:["'self'","data:","blob:","https://*.tile.openstreetmap.org"],styleSrc:["'self'","'unsafe-inline'","https://unpkg.com"],scriptSrc:["'self'","'unsafe-inline'","https://unpkg.com"],connectSrc:["'self'","ws:","wss:"],fontSrc:["'self'","data:"]}}}));
 app.use(rateLimit({windowMs:60_000,limit:180,standardHeaders:'draft-8',legacyHeaders:false}));
+const authLimiter = createAuthLimiter();
 
 // Stripe webhook must receive raw bytes before JSON parsing.
 app.post('/api/payments/webhook', express.raw({type:'application/json'}), (req,res)=>{
@@ -230,18 +236,18 @@ const uploadDir=path.join(__dirname,'public','uploads');
 fs.mkdirSync(uploadDir,{recursive:true});
 const upload=multer({storage:multer.diskStorage({destination:uploadDir,filename:(req,file,cb)=>cb(null,`${Date.now()}-${crypto.randomBytes(5).toString('hex')}${path.extname(file.originalname).toLowerCase()}`)}),limits:{fileSize:8*1024*1024,files:8},fileFilter:(req,file,cb)=>cb(null,/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype))});
 
-app.post('/api/auth/signup', async (req,res)=>{
-  const name=cleanText(req.body.name,80), email=cleanText(req.body.email,254).toLowerCase(), password=String(req.body.password||'');
-  if(!name||!validEmail(email)||password.length<8||password.length>128) return res.status(400).json({error:'Valid name, email and password (8–128 characters) are required'});
+app.post('/api/auth/signup', authLimiter, async (req,res)=>{
+  const {name,email,password}=req.body;
+  if(!name||!email||!password||password.length<8) return res.status(400).json({error:'Name, email and password (8+ characters) are required'});
   try{
     const hash=await bcrypt.hash(password,12);
-    const id=Number(db.prepare('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)').run(name,email,hash).lastInsertRowid);
-    db.prepare('INSERT INTO seller_profiles(user_id,display_name) VALUES(?,?)').run(id,name);
+    const id=Number(db.prepare('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)').run(name.trim(),email.trim().toLowerCase(),hash).lastInsertRowid);
+    db.prepare('INSERT INTO seller_profiles(user_id,display_name) VALUES(?,?)').run(id,name.trim());
     const user=publicUser(id); const token=jwt.sign({id:user.id,role:user.role},JWT_SECRET,{expiresIn:'7d'});
     res.cookie('salespot_token',token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:7*86400_000,path:'/'}).json({user});
   }catch(e){ res.status(409).json({error:e.message.includes('UNIQUE')?'Email already registered':'Unable to create account'}); }
 });
-app.post('/api/auth/login', async (req,res)=>{
+app.post('/api/auth/login', authLimiter, async (req,res)=>{
   const {email,password}=req.body; const user=db.prepare('SELECT * FROM users WHERE email=?').get(String(email||'').trim().toLowerCase());
   if(!user || !(await bcrypt.compare(password||'',user.password_hash))) return res.status(401).json({error:'Incorrect email or password'});
   const token=jwt.sign({id:user.id,role:user.role},JWT_SECRET,{expiresIn:'7d'});
@@ -268,15 +274,9 @@ app.get('/api/listings', optionalAuth, (req,res)=>{
 });
 app.get('/api/listings/:id',optionalAuth,(req,res)=>{const l=serializeListing(db.prepare('SELECT * FROM listings WHERE id=?').get(Number(req.params.id))); if(!l)return res.status(404).json({error:'Listing not found'}); l.bids=db.prepare(`SELECT b.id,b.amount_cents,b.created_at,u.name bidder FROM bids b JOIN users u ON u.id=b.bidder_id WHERE b.listing_id=? ORDER BY b.amount_cents DESC,b.created_at ASC LIMIT 50`).all(l.id); if(req.user)l.watched=!!db.prepare('SELECT 1 FROM watchlist WHERE user_id=? AND listing_id=?').get(req.user.id,l.id); res.json({listing:l});});
 app.post('/api/listings',auth,upload.array('images',8),(req,res)=>{
-  const b=req.body; b.title=cleanText(b.title,140); b.description=cleanText(b.description,5000); b.category=cleanText(b.category,80)||'Other';
-  if(!b.title||!['auction','marketplace','yard_sale','estate_sale'].includes(b.type)) return res.status(400).json({error:'Valid type and title required'});
-  const cents=v=>{ if(v===''||v==null)return null; const n=Number(v); return Number.isFinite(n)&&n>=0?Math.round(n*100):NaN; };
-  const price=cents(b.price), startBid=cents(b.start_bid), reserve=cents(b.reserve), increment=cents(b.bid_increment);
-  if([price,startBid,reserve,increment].some(Number.isNaN)) return res.status(400).json({error:'Prices and bids must be valid non-negative numbers'});
-  if(b.type==='marketplace' && (!price || price<1)) return res.status(400).json({error:'Marketplace listings require a price'});
-  if(b.type==='auction' && (!startBid || startBid<1)) return res.status(400).json({error:'Auctions require a starting bid'});
-  if(b.type==='auction' && (!b.ends_at || new Date(b.ends_at).getTime()<=Date.now())) return res.status(400).json({error:'Auction end time must be in the future'});
-  const result=db.prepare(`INSERT INTO listings(seller_id,type,title,description,category,price_cents,start_bid_cents,current_bid_cents,reserve_cents,bid_increment_cents,starts_at,ends_at,event_date,event_time,address,city,state,latitude,longitude,shipping,local_pickup,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active')`).run(req.user.id,b.type,b.title,b.description,b.category,price,startBid,startBid,reserve,increment||100,b.starts_at||null,b.ends_at||null,b.event_date||null,b.event_time||null,b.address||null,b.city||null,b.state||null,b.latitude?Number(b.latitude):null,b.longitude?Number(b.longitude):null,b.shipping==='true'||b.shipping==='on'?1:0,b.local_pickup==='false'?0:1);
+  const b=req.body; if(!b.title||!['auction','marketplace','yard_sale','estate_sale'].includes(b.type)) return res.status(400).json({error:'Valid type and title required'});
+  const cents=v=>v===''||v==null?null:Math.round(Number(v)*100);
+  const result=db.prepare(`INSERT INTO listings(seller_id,type,title,description,category,price_cents,start_bid_cents,current_bid_cents,reserve_cents,bid_increment_cents,starts_at,ends_at,event_date,event_time,address,city,state,latitude,longitude,shipping,local_pickup,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active')`).run(req.user.id,b.type,b.title,b.description||'',b.category||'Other',cents(b.price),cents(b.start_bid),cents(b.start_bid),cents(b.reserve),cents(b.bid_increment)||100,b.starts_at||null,b.ends_at||null,b.event_date||null,b.event_time||null,b.address||null,b.city||null,b.state||null,b.latitude?Number(b.latitude):null,b.longitude?Number(b.longitude):null,b.shipping==='true'||b.shipping==='on'?1:0,b.local_pickup==='false'?0:1);
   const id=Number(result.lastInsertRowid); const ins=db.prepare('INSERT INTO listing_images(listing_id,url,sort_order) VALUES(?,?,?)'); (req.files||[]).forEach((f,i)=>ins.run(id,`/uploads/${f.filename}`,i));
   io.emit('listing:new',{listing:serializeListing(db.prepare('SELECT * FROM listings WHERE id=?').get(id))}); res.status(201).json({listing:serializeListing(db.prepare('SELECT * FROM listings WHERE id=?').get(id))});
 });
@@ -301,7 +301,7 @@ app.get('/api/messages',auth,(req,res)=>{
   const msgs=db.prepare(`SELECT m.*,su.name sender_name,ru.name receiver_name,l.title listing_title FROM messages m JOIN users su ON su.id=m.sender_id JOIN users ru ON ru.id=m.receiver_id LEFT JOIN listings l ON l.id=m.listing_id WHERE m.sender_id=? OR m.receiver_id=? ORDER BY m.created_at DESC LIMIT 300`).all(req.user.id,req.user.id); res.json({messages:msgs});
 });
 app.post('/api/messages',auth,(req,res)=>{
-  const receiver=Number(req.body.receiver_id),body=String(req.body.body||'').trim(); if(!receiver||!body) return res.status(400).json({error:'Recipient and message required'}); if(receiver===req.user.id)return res.status(400).json({error:'You cannot message yourself'}); if(!db.prepare('SELECT 1 FROM users WHERE id=?').get(receiver))return res.status(404).json({error:'Recipient not found'}); if(body.length>2000)return res.status(400).json({error:'Message is too long'});
+  const receiver=Number(req.body.receiver_id),body=String(req.body.body||'').trim(); if(!receiver||!body) return res.status(400).json({error:'Recipient and message required'}); if(body.length>2000)return res.status(400).json({error:'Message is too long'});
   const id=Number(db.prepare('INSERT INTO messages(sender_id,receiver_id,listing_id,body) VALUES(?,?,?,?)').run(req.user.id,receiver,req.body.listing_id?Number(req.body.listing_id):null,body).lastInsertRowid); const m=db.prepare('SELECT * FROM messages WHERE id=?').get(id); io.to(`user:${receiver}`).emit('message:new',m); res.status(201).json({message:m});
 });
 
