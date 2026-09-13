@@ -272,7 +272,7 @@ app.get('/api/listings', optionalAuth, (req,res)=>{
   }
   res.json({listings:rows.map(serializeListing)});
 });
-app.get('/api/listings/:id',optionalAuth,(req,res)=>{const l=serializeListing(db.prepare('SELECT * FROM listings WHERE id=?').get(Number(req.params.id))); if(!l)return res.status(404).json({error:'Listing not found'}); l.bids=db.prepare(`SELECT b.id,b.amount_cents,b.created_at,u.name bidder FROM bids b JOIN users u ON u.id=b.bidder_id WHERE b.listing_id=? ORDER BY b.amount_cents DESC,b.created_at ASC LIMIT 50`).all(l.id); if(req.user)l.watched=!!db.prepare('SELECT 1 FROM watchlist WHERE user_id=? AND listing_id=?').get(req.user.id,l.id); res.json({listing:l});});
+app.get('/api/listings/:id',optionalAuth,(req,res)=>{const l=serializeListing(db.prepare('SELECT * FROM listings WHERE id=?').get(Number(req.params.id))); if(!l)return res.status(404).json({error:'Listing not found'}); l.bids=db.prepare(`SELECT b.id,b.amount_cents,b.created_at,u.name bidder FROM bids b JOIN users u ON u.id=b.bidder_id WHERE b.listing_id=? ORDER BY b.amount_cents DESC,b.created_at ASC LIMIT 50`).all(l.id); if(req.user){l.watched=!!db.prepare('SELECT 1 FROM watchlist WHERE user_id=? AND listing_id=?').get(req.user.id,l.id);const leader=db.prepare('SELECT bidder_id FROM bids WHERE listing_id=? ORDER BY amount_cents DESC,created_at ASC LIMIT 1').get(l.id);l.current_user_is_high_bidder=leader?.bidder_id===req.user.id;} res.json({listing:l});});
 app.post('/api/listings',auth,upload.array('images',8),(req,res)=>{
   const b=req.body; if(!b.title||!['auction','marketplace','yard_sale','estate_sale'].includes(b.type)) return res.status(400).json({error:'Valid type and title required'});
   const cents=v=>v===''||v==null?null:Math.round(Number(v)*100);
@@ -291,6 +291,8 @@ app.post('/api/listings/:id/bids',auth,(req,res)=>{
     const l=db.prepare('SELECT * FROM listings WHERE id=?').get(id); if(!l||l.type!=='auction'||l.status!=='active') throw new Error('Auction is not active');
     if(l.ends_at && new Date(l.ends_at).getTime()<=Date.now()) throw new Error('Auction has ended');
     if(l.seller_id===req.user.id) throw new Error('You cannot bid on your own listing');
+    const leader=db.prepare('SELECT bidder_id FROM bids WHERE listing_id=? ORDER BY amount_cents DESC,created_at ASC LIMIT 1').get(id);
+    if(leader?.bidder_id===req.user.id) throw new Error('You are already the highest bidder. Wait until another bidder outbids you.');
     const minimum=(l.current_bid_cents||l.start_bid_cents||0)+(l.bid_increment_cents||100); if(amount<minimum) throw new Error(`Minimum bid is $${(minimum/100).toFixed(2)}`);
     db.prepare('INSERT INTO bids(listing_id,bidder_id,amount_cents) VALUES(?,?,?)').run(id,req.user.id,amount); db.prepare('UPDATE listings SET current_bid_cents=? WHERE id=?').run(amount,id); db.exec('COMMIT');
     const payload={listingId:id,amount_cents:amount,bidder:publicUser(req.user.id).name,created_at:new Date().toISOString()}; io.to(`listing:${id}`).emit('bid:new',payload); res.json(payload);
